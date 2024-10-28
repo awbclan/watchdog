@@ -31,12 +31,6 @@ func main() {
 	composeFilePath = getEnv("COMPOSE_FILE_PATH", "docker-compose.yml")
 	imageToWatch = getEnv("IMAGE_TO_WATCH", "ghcr.io/awbclan/awgores:latest")
 
-	// Zeige alle Umgebungsvariablen beim Start an, außer GHCR_PASSWORD
-	log.Printf("Starting with the following environment variables:\n")
-	log.Printf("COMPOSE_FILE_PATH: %s\n", composeFilePath)
-	log.Printf("IMAGE_TO_WATCH: %s\n", imageToWatch)
-	log.Printf("GHCR_USERNAME: %s\n", os.Getenv("GHCR_USERNAME"))
-
 	// Docker-Client initialisieren
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -96,7 +90,6 @@ func handleDockerEvent(ctx context.Context, cli *client.Client, event events.Mes
 		container, err := cli.ContainerInspect(ctx, event.Actor.ID)
 		if err != nil {
 			if client.IsErrNotFound(err) {
-				log.Printf("Container already removed, skipping inspection.")
 				return
 			}
 			log.Printf("Error inspecting container: %v\n", err)
@@ -144,12 +137,12 @@ func restartContainerWithDocker(containerName string) {
 }
 
 func executeDockerComposeCommand(command string, args ...string) error {
-	fullArgs := append([]string{"-f", composeFilePath, command}, args...)
-	cmd := exec.Command("docker-compose", fullArgs...)
+	fullArgs := append([]string{"compose", "-f", composeFilePath, command}, args...)
+	cmd := exec.Command("docker", fullArgs...)
 	cmdOutput, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("command 'docker-compose %s' failed with output: %s, error: %v", command, string(cmdOutput), err)
+		return fmt.Errorf("command 'docker compose %s' failed with output: %s, error: %v", command, string(cmdOutput), err)
 	}
-	log.Printf("Command 'docker-compose %s' succeeded", command)
+	log.Printf("Command 'docker compose %s' succeeded", command)
 	return nil
 }
