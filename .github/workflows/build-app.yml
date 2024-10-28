@@ -1,0 +1,46 @@
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    - name: Build executable and prepare release directory
+      run: |
+        mkdir -p release
+        CGO_ENABLED=0 go build -o release/watchdog ./src/main.go
+
+    - name: Create or Update GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        RELEASE_ID=$(curl -s -X GET -H "Authorization: token $GITHUB_TOKEN" \
+          https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest | jq -r '.id')
+
+        if [ "$RELEASE_ID" = "null" ]; then
+          RELEASE_ID=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"latest\", \"name\":\"latest\", \"body\":\"Latest release of watchdog\", \"draft\":false, \"prerelease\":false}" \
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases | jq -r '.id')
+        else
+          echo "Updating existing latest release with ID: $RELEASE_ID"
+        fi
+
+        curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" \
+          --data-binary @release/watchdog "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=watchdog" || \
+          (ASSET_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets | jq -r '.[] | select(.name=="watchdog") | .id') && \
+          curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID} && \
+          curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" \
+            --data-binary @release/watchdog "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=watchdog")
