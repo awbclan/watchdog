@@ -4,7 +4,7 @@ on:
       - main
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,10 +25,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        # Check if "latest" release exists
         RELEASE_ID=$(curl -s -X GET -H "Authorization: token $GITHUB_TOKEN" \
           https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest | jq -r '.id')
 
         if [ "$RELEASE_ID" = "null" ]; then
+          # Create a new "latest" release if it doesn't exist
           RELEASE_ID=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
             -d "{\"tag_name\":\"latest\", \"name\":\"latest\", \"body\":\"Latest release of watchdog\", \"draft\":false, \"prerelease\":false}" \
             https://api.github.com/repos/${GITHUB_REPOSITORY}/releases | jq -r '.id')
@@ -36,11 +38,16 @@ jobs:
           echo "Updating existing latest release with ID: $RELEASE_ID"
         fi
 
-        curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" \
-          --data-binary @release/watchdog "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=watchdog" || \
-          (ASSET_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets | jq -r '.[] | select(.name=="watchdog") | .id') && \
+        # Check if the asset already exists and delete it if it does
+        ASSET_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets | jq -r '.[] | select(.name=="watchdog") | .id')
+
+        if [ -n "$ASSET_ID" ]; then
+          echo "Deleting existing asset with ID: $ASSET_ID"
           curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID} && \
-          curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" \
-            --data-binary @release/watchdog "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=watchdog")
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}
+        fi
+
+        # Upload the new asset
+        curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" \
+          --data-binary @release/watchdog "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=watchdog"
